@@ -1,0 +1,6 @@
+{"delay":0.3,"type":"message","data":{"role":"agent","text":"收到参考视频:{url}\n目标主题:{topic}。先下载并分析它。"}}
+{"delay":0.5,"type":"step","data":{"id":"fetch","title":"下载参考视频","state":"running"}}
+{"delay":1.2,"type":"step","data":{"id":"fetch","title":"下载参考视频","state":"done"}}
+{"delay":0.3,"type":"step","data":{"id":"analyze","title":"分析画面与台词结构","state":"running"}}
+{"delay":1.5,"type":"step","data":{"id":"analyze","title":"分析画面与台词结构","state":"failed"}}
+{"delay":0.3,"type":"error","data":{"text":"演示:参考视频无法解析,请检查链接是否可公开访问"}}

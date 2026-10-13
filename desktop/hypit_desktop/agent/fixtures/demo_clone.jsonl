@@ -1,0 +1,25 @@
+{"delay":0.3,"type":"message","data":{"role":"agent","text":"收到参考视频:{url}\n目标主题:{topic}(市场:{market},语言:{language}),时长:{duration}。我先来分析它。"}}
+{"delay":0.5,"type":"step","data":{"id":"fetch","title":"下载参考视频","state":"running"}}
+{"delay":1.2,"type":"step","data":{"id":"fetch","title":"下载参考视频","state":"done"}}
+{"delay":0.3,"type":"step","data":{"id":"analyze","title":"分析画面与台词结构","state":"running"}}
+{"delay":1.5,"type":"message","data":{"role":"agent","text":"这是一条 20 秒的竖屏口播:开头 2 秒抛出冲突问题,中段用排行榜板逐项揭晓,结尾反转。节奏很快,平均 1.5 秒一次切换。"}}
+{"delay":0.8,"type":"step","data":{"id":"analyze","title":"分析画面与台词结构","state":"done"}}
+{"delay":0.3,"type":"step","data":{"id":"plan","title":"制定复刻方案与预算","state":"running"}}
+{"delay":1.0,"type":"cost","data":{"usd":0.0}}
+{"delay":0.5,"type":"confirm","data":{"id":"budget","prompt":"复刻方案:保留原视频的结构与节奏,换成「{topic}」主题,重新生成人物、画面和配音。预计费用约 $1.2(模型:{model},{resolution})。是否开始生成?","options":[{"id":"go","label":"确认生成"},{"id":"cancel","label":"取消"}]}}
+{"delay":0.2,"type":"step","data":{"id":"plan","title":"制定复刻方案与预算","state":"done"}}
+{"delay":0.3,"type":"step","data":{"id":"images","title":"生成人物与画面","state":"running"}}
+{"delay":1.5,"type":"cost","data":{"usd":0.35}}
+{"delay":0.5,"type":"step","data":{"id":"images","title":"生成人物与画面","state":"done"}}
+{"delay":0.3,"type":"step","data":{"id":"video","title":"生成视频片段","state":"running"}}
+{"delay":1.8,"type":"cost","data":{"usd":0.95}}
+{"delay":0.5,"type":"step","data":{"id":"video","title":"生成视频片段","state":"done"}}
+{"delay":0.3,"type":"step","data":{"id":"voice","title":"配音与字幕对齐","state":"running"}}
+{"delay":1.2,"type":"cost","data":{"usd":1.1}}
+{"delay":0.5,"type":"step","data":{"id":"voice","title":"配音与字幕对齐","state":"done"}}
+{"delay":0.3,"type":"step","data":{"id":"render","title":"合成渲染","state":"running"}}
+{"delay":2.0,"type":"cost","data":{"usd":1.15}}
+{"delay":0.5,"type":"step","data":{"id":"render","title":"合成渲染","state":"done"}}
+{"delay":0.3,"type":"artifact","data":{"kind":"video","path":"demo/output.mp4"}}
+{"delay":0.3,"type":"message","data":{"role":"agent","text":"完成了!总花费约 $1.15。如果某个时间点不满意,告诉我,我来重做。"}}
+{"delay":0.2,"type":"done","data":{"status":"success"}}
