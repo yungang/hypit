@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from functools import partial
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QHBoxLayout, QInputDialog, QLabel, QMenu, QMessageBox,
@@ -15,7 +15,9 @@ from ..db import TERMINAL, TaskStore
 from ..events import Event
 from ..publish.base import Publisher
 from ..settings import Settings
+from ..video_title import fetch_title
 from ..worker import AgentWorker
+from .feedback_dialog import FeedbackDialog
 from .library_panel import LibraryPanel
 from .new_task_page import NewTaskPage
 from .publish_dialog import PublishDialog
@@ -28,7 +30,8 @@ from .task_page import TaskPage
 
 class MainWindow(QWidget):
     def __init__(self, store: TaskStore, backend_factory: Callable[[Settings], AgentBackend],
-                 publisher: Publisher, settings: Settings, data_dir: Path):
+                 publisher: Publisher, settings: Settings, data_dir: Path,
+                 title_fetcher: Optional[Callable[[str], Optional[str]]] = fetch_title):
         super().__init__()
         self.setWindowTitle("视频复刻助手")
         self.resize(1280, 900)
@@ -41,7 +44,8 @@ class MainWindow(QWidget):
         self._selected_id: int | None = None
 
         # --- left: the two queues ---
-        new_btn = QPushButton("＋ 新建任务")
+        new_btn = QPushButton("返回主页")
+        self._home_btn = new_btn
         new_btn.clicked.connect(self._show_new)
         self._pending = TaskListWidget()
         self._execution = TaskListWidget()
@@ -73,7 +77,7 @@ class MainWindow(QWidget):
         side_layout.addWidget(stats_btn)
         side_layout.addWidget(settings_btn)
 
-        self._new_page = NewTaskPage(store)
+        self._new_page = NewTaskPage(store, title_fetcher)
         self._new_page.submitted.connect(self._submit)
         self._stack = QStackedWidget()
         self._stack.addWidget(self._new_page)
@@ -170,6 +174,7 @@ class MainWindow(QWidget):
         page.cancel_requested.connect(partial(self._cancel_worker, task_id))
         page.rerun_requested.connect(partial(self._rerun, task_id))
         page.runs_requested.connect(partial(self._show_runs, task_id))
+        page.redo_requested.connect(partial(self._redo, task_id))
         page.publish_requested.connect(partial(self._publish_from_page, task_id))
         self._pages[task_id] = page
         self._stack.addWidget(page)
@@ -182,6 +187,19 @@ class MainWindow(QWidget):
 
     def _show_runs(self, task_id: int, *_) -> None:
         RunsDialog(self._store, task_id, self).exec()
+
+    def _redo(self, task_id: int, *_) -> None:
+        """'Not satisfied': a new task that revises the finished one with the user's feedback."""
+        row = self._store.task(task_id)
+        dialog = FeedbackDialog(row["title"], parent=self)
+        if not dialog.exec():  # 0 = cancelled
+            return
+        text, at = dialog.result_value()
+        brief = json.loads(row["brief"])
+        brief.update(feedback=text, feedback_at=at, project_from=brief.get("project_from") or task_id)
+        new_id = self._store.create_task(f"{row['title']}(重做)", brief, status="waiting")
+        self._schedule()
+        self._open_task(new_id)
 
     def _publish_from_page(self, task_id: int, video_path: str) -> None:
         self._open_publish(task_id, video_path, self._store.task(task_id)["title"])
@@ -202,7 +220,7 @@ class MainWindow(QWidget):
             return
         self._selected_id = None
         self._reload_lists()
-        self._new_page.clear_topics()
+        self._new_page.reset_rows()
         self._new_page.set_new(f"已加入待执行队列({len(ids)} 个任务)。确认后可拖到执行队列开始。")
         self._stack.setCurrentWidget(self._new_page)
 
@@ -255,7 +273,8 @@ class MainWindow(QWidget):
         page.set_running()
         self._store.start_run(task_id, row["title"], normalize(brief)["model"])
         self._refresh_costs(task_id)
-        worker = AgentWorker(self._backend_factory(self._settings), normalize(brief), self)
+        worker = AgentWorker(self._backend_factory(self._settings),
+                             {**normalize(brief), "task_id": task_id}, self)
         worker.event.connect(partial(self._on_event, task_id))
         worker.finished.connect(partial(self._on_worker_finished, task_id))
         self._workers[task_id] = worker

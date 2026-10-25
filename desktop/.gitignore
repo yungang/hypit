@@ -3,3 +3,5 @@ __pycache__/
 build/
 .venv/
 nuitka-crash-report.xml
+dist/
+experiments/out/

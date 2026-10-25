@@ -1,0 +1,726 @@
+{
+ "format": "hypit.cli-pricing@1",
+ "run": "reference.svrun",
+ "requestCount": 34,
+ "noChargeRequestCount": 16,
+ "groups": [
+  {
+   "capability": "@hypit/whisperx@1#whisperx-alignment",
+   "status": "resolved",
+   "endpoint": "hypihub.default",
+   "use": "@hypit/provider-hypihub",
+   "pricing": {
+    "kind": "page",
+    "url": "https://hypit.ai/commercial/pricing/"
+   },
+   "pricingDocuments": [
+    {
+     "source": "https://hypit.ai/v1/pricing?model=victor-upmeet%2Fwhisperx",
+     "data": {
+      "credits_per_usd": 200,
+      "model": "victor-upmeet/whisperx",
+      "object": "model_pricing",
+      "pricing": {
+       "base_usd": 0.00805,
+       "credits": {
+        "base": 1.61,
+        "per_audio_second": 0.021
+       },
+       "currency": "usd",
+       "mode": "per_audio_second",
+       "per_audio_second_usd": 0.000105,
+       "unit": "per second of audio"
+      }
+     }
+    }
+   ],
+   "requests": [
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Aarms-are-asking-semantic:request-whisperx",
+     "port": "alignment",
+     "capability": "@hypit/whisperx@1#whisperx-alignment",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "language": "en"
+      },
+      "references": {
+       "audio": 1
+      }
+     }
+    },
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Adaily-creatine-semantic:request-whisperx",
+     "port": "alignment",
+     "capability": "@hypit/whisperx@1#whisperx-alignment",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "language": "en"
+      },
+      "references": {
+       "audio": 1
+      }
+     }
+    },
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Aopening-semantic:request-whisperx",
+     "port": "alignment",
+     "capability": "@hypit/whisperx@1#whisperx-alignment",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "language": "en"
+      },
+      "references": {
+       "audio": 1
+      }
+     }
+    }
+   ]
+  },
+  {
+   "capability": "@hypit/seedance@1#seedance-2-mini",
+   "status": "resolved",
+   "endpoint": "hypihub.default",
+   "use": "@hypit/provider-hypihub",
+   "pricing": {
+    "kind": "page",
+    "url": "https://hypit.ai/commercial/pricing/"
+   },
+   "pricingDocuments": [
+    {
+     "source": "https://hypit.ai/v1/pricing?model=seedance-2-mini",
+     "data": {
+      "credits_per_usd": 200,
+      "model": "seedance-2-mini",
+      "object": "model_pricing",
+      "operations": [
+       {
+        "model": "seedance-2-mini",
+        "operation": "provider-defined",
+        "pricing": {
+         "credits": {
+          "media_rates": [
+           {
+            "flags": {
+             "reference_video": false
+            },
+            "resolution": "720p",
+            "unit": 9.43
+           },
+           {
+            "flags": {
+             "reference_video": true
+            },
+            "input_unit": 5.75,
+            "resolution": "720p",
+            "unit": 5.75
+           },
+           {
+            "flags": {
+             "reference_video": false
+            },
+            "resolution": "480p",
+            "unit": 4.37
+           },
+           {
+            "flags": {
+             "reference_video": true
+            },
+            "input_unit": 2.76,
+            "resolution": "480p",
+            "unit": 2.76
+           }
+          ],
+          "per_second": 2.76
+         },
+         "currency": "usd",
+         "media": {
+          "audio": true,
+          "audio_field": "generate_audio",
+          "duration_field": "duration",
+          "measure_output_seconds": true,
+          "resolution": "720p",
+          "resolution_field": "resolution",
+          "seconds": 5
+         },
+         "media_rates": [
+          {
+           "flags": {
+            "reference_video": false
+           },
+           "resolution": "720p",
+           "unit_usd": 0.04715
+          },
+          {
+           "flags": {
+            "reference_video": true
+           },
+           "input_unit_usd": 0.02875,
+           "resolution": "720p",
+           "unit_usd": 0.02875
+          },
+          {
+           "flags": {
+            "reference_video": false
+           },
+           "resolution": "480p",
+           "unit_usd": 0.02185
+          },
+          {
+           "flags": {
+            "reference_video": true
+           },
+           "input_unit_usd": 0.0138,
+           "resolution": "480p",
+           "unit_usd": 0.0138
+          }
+         ],
+         "mode": "per_second",
+         "per_second_usd": 0.0138,
+         "unit": "per second"
+        }
+       }
+      ],
+      "pricing": {
+       "billing_notes": [
+        "The video portion is output seconds multiplied by the matching output rate, plus total reference-video seconds multiplied by the matching input rate. When media_rates contains conditional rows, select one row matching the request resolution and flag conditions, then take both output and input prices from that same row. Where rows use flags.reference_video, that flag describes the entire generation request: true means it contains one or more reference videos, and false means it contains none. It does not describe the input/output billing direction. For these rows, with any reference video, use the reference_video=true row for both charges; never combine output pricing from the false row with input pricing from the true row. Adding more reference videos increases their total input seconds, not the choice of flag. In each matching pricing.credits.media_rates row, unit is the output price in credits per second and input_unit is the reference-video input price in credits per second; the corresponding USD fields in pricing.media_rates are unit_usd and input_unit_usd. Equal numeric values still represent two separate charges: output_seconds * unit + total_reference_video_seconds * input_unit. Include both portions even when unit equals input_unit; neither rate includes the other portion. Other published charges still apply.",
+        "A complete estimate requires the durations of all reference videos. Unknown input duration means an incomplete estimate, not zero input seconds. Use the full measured reference durations unless a published rule explicitly specifies a different billable duration. Published credits rates already include retail adjustments; do not invent additional discounts or duration conversions when converting between USD and credits.",
+        "Reference-video durations are measured after generation completes, without an additional pre-submission reservation. Settlement uses the job's frozen rate card and final billable quantities; if measurement is unavailable, provider-reported usage or the initial estimate is retained.",
+        "Automatic output duration (-1) reserves zero output seconds. This is an incomplete estimate, not free generation; final measured output and reference-video usage are charged after completion."
+       ],
+       "credits": {
+        "media_rates": [
+         {
+          "flags": {
+           "reference_video": false
+          },
+          "resolution": "720p",
+          "unit": 9.43
+         },
+         {
+          "flags": {
+           "reference_video": true
+          },
+          "input_unit": 5.75,
+          "resolution": "720p",
+          "unit": 5.75
+         },
+         {
+          "flags": {
+           "reference_video": false
+          },
+          "resolution": "480p",
+          "unit": 4.37
+         },
+         {
+          "flags": {
+           "reference_video": true
+          },
+          "input_unit": 2.76,
+          "resolution": "480p",
+          "unit": 2.76
+         }
+        ],
+        "per_second": 2.76
+       },
+       "currency": "usd",
+       "media": {
+        "audio": true,
+        "audio_field": "generate_audio",
+        "duration_field": "duration",
+        "measure_output_seconds": true,
+        "resolution": "720p",
+        "resolution_field": "resolution",
+        "seconds": 5
+       },
+       "media_rates": [
+        {
+         "flags": {
+          "reference_video": false
+         },
+         "resolution": "720p",
+         "unit_usd": 0.04715
+        },
+        {
+         "flags": {
+          "reference_video": true
+         },
+         "input_unit_usd": 0.02875,
+         "resolution": "720p",
+         "unit_usd": 0.02875
+        },
+        {
+         "flags": {
+          "reference_video": false
+         },
+         "resolution": "480p",
+         "unit_usd": 0.02185
+        },
+        {
+         "flags": {
+          "reference_video": true
+         },
+         "input_unit_usd": 0.0138,
+         "resolution": "480p",
+         "unit_usd": 0.0138
+        }
+       ],
+       "mode": "per_second",
+       "per_second_usd": 0.0138,
+       "unit": "per second"
+      }
+     }
+    }
+   ],
+   "requests": [
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Aarms-are-asking-take:generate",
+     "port": "generation",
+     "capability": "@hypit/seedance@1#seedance-2-mini",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "prompt": "367 words",
+       "resolution": "720p",
+       "aspectRatio": "9:16",
+       "duration": 6,
+       "generateAudio": true,
+       "webSearch": false
+      },
+      "references": {
+       "image": 2,
+       "audio": 2
+      }
+     }
+    },
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Adaily-creatine-take:generate",
+     "port": "generation",
+     "capability": "@hypit/seedance@1#seedance-2-mini",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "prompt": "344 words",
+       "resolution": "720p",
+       "aspectRatio": "9:16",
+       "duration": 8,
+       "generateAudio": true,
+       "webSearch": false
+      },
+      "references": {
+       "image": 2,
+       "audio": 2
+      }
+     }
+    },
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Alifestyle-montage:generate",
+     "port": "generation",
+     "capability": "@hypit/seedance@1#seedance-2-mini",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "prompt": "281 words",
+       "resolution": "720p",
+       "aspectRatio": "9:16",
+       "duration": 5,
+       "generateAudio": false,
+       "webSearch": false
+      },
+      "references": {
+       "image": 3
+      }
+     }
+    },
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Aopening-take:generate",
+     "port": "generation",
+     "capability": "@hypit/seedance@1#seedance-2-mini",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "prompt": "129 words",
+       "resolution": "720p",
+       "aspectRatio": "9:16",
+       "duration": 5,
+       "generateAudio": true,
+       "webSearch": false
+      },
+      "references": {
+       "image": 1,
+       "audio": 1
+      }
+     }
+    }
+   ]
+  },
+  {
+   "capability": "@hypit/gpt-image@1#gpt-image-2",
+   "status": "resolved",
+   "endpoint": "hypihub.default",
+   "use": "@hypit/provider-hypihub",
+   "pricing": {
+    "kind": "page",
+    "url": "https://hypit.ai/commercial/pricing/"
+   },
+   "pricingDocuments": [
+    {
+     "source": "https://hypit.ai/v1/pricing?model=gpt-image-2",
+     "data": {
+      "credits_per_usd": 200,
+      "model": "gpt-image-2",
+      "object": "model_pricing",
+      "operations": [
+       {
+        "model": "gpt-image-2",
+        "operation": "text-to-image",
+        "pricing": {
+         "base_usd": 0.0345,
+         "credits": {
+          "base": 6.9,
+          "media_rates": [
+           {
+            "resolution": "4k",
+            "unit": 18.4
+           },
+           {
+            "resolution": "2k",
+            "unit": 11.5
+           },
+           {
+            "resolution": "1k",
+            "unit": 6.9
+           }
+          ]
+         },
+         "currency": "usd",
+         "media": {
+          "pixel_resolution": {
+           "1k": 1024,
+           "2k": 2048,
+           "4k": 4096
+          },
+          "resolution_field": "resolution"
+         },
+         "media_rates": [
+          {
+           "resolution": "4k",
+           "unit_usd": 0.092
+          },
+          {
+           "resolution": "2k",
+           "unit_usd": 0.0575
+          },
+          {
+           "resolution": "1k",
+           "unit_usd": 0.0345
+          }
+         ],
+         "mode": "per_image",
+         "unit": "per image"
+        }
+       },
+       {
+        "model": "gpt-image-2-image-to-image",
+        "operation": "image-to-image",
+        "pricing": {
+         "base_usd": 0.0345,
+         "credits": {
+          "base": 6.9,
+          "media_rates": [
+           {
+            "resolution": "4k",
+            "unit": 18.4
+           },
+           {
+            "resolution": "2k",
+            "unit": 11.5
+           },
+           {
+            "resolution": "1k",
+            "unit": 6.9
+           }
+          ]
+         },
+         "currency": "usd",
+         "media": {
+          "pixel_resolution": {
+           "1k": 1024,
+           "2k": 2048,
+           "4k": 4096
+          },
+          "resolution_field": "resolution"
+         },
+         "media_rates": [
+          {
+           "resolution": "4k",
+           "unit_usd": 0.092
+          },
+          {
+           "resolution": "2k",
+           "unit_usd": 0.0575
+          },
+          {
+           "resolution": "1k",
+           "unit_usd": 0.0345
+          }
+         ],
+         "mode": "per_image",
+         "unit": "per image"
+        }
+       }
+      ],
+      "pricing": {
+       "base_usd": 0.0345,
+       "credits": {
+        "base": 6.9,
+        "media_rates": [
+         {
+          "resolution": "4k",
+          "unit": 18.4
+         },
+         {
+          "resolution": "2k",
+          "unit": 11.5
+         },
+         {
+          "resolution": "1k",
+          "unit": 6.9
+         }
+        ]
+       },
+       "currency": "usd",
+       "media": {
+        "pixel_resolution": {
+         "1k": 1024,
+         "2k": 2048,
+         "4k": 4096
+        },
+        "resolution_field": "resolution"
+       },
+       "media_rates": [
+        {
+         "resolution": "4k",
+         "unit_usd": 0.092
+        },
+        {
+         "resolution": "2k",
+         "unit_usd": 0.0575
+        },
+        {
+         "resolution": "1k",
+         "unit_usd": 0.0345
+        }
+       ],
+       "mode": "per_image",
+       "unit": "per image"
+      }
+     }
+    }
+   ],
+   "requests": [
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Acoffee:generate",
+     "port": "generation",
+     "capability": "@hypit/gpt-image@1#gpt-image-2",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "prompt": "164 words",
+       "aspectRatio": "9:16",
+       "resolution": "2K"
+      },
+      "references": {
+       "image": 1
+      }
+     }
+    },
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Acreatine:generate",
+     "port": "generation",
+     "capability": "@hypit/gpt-image@1#gpt-image-2",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "prompt": "55 words",
+       "aspectRatio": "1:1",
+       "resolution": "2K"
+      },
+      "references": {}
+     }
+    },
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Agirl-hold:generate",
+     "port": "generation",
+     "capability": "@hypit/gpt-image@1#gpt-image-2",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "prompt": "156 words",
+       "aspectRatio": "9:16",
+       "resolution": "2K"
+      },
+      "references": {
+       "image": 2
+      }
+     }
+    },
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Agirl:generate",
+     "port": "generation",
+     "capability": "@hypit/gpt-image@1#gpt-image-2",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "prompt": "291 words",
+       "aspectRatio": "9:16",
+       "resolution": "2K"
+      },
+      "references": {}
+     }
+    },
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Aguy-hold:generate",
+     "port": "generation",
+     "capability": "@hypit/gpt-image@1#gpt-image-2",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "prompt": "151 words",
+       "aspectRatio": "9:16",
+       "resolution": "2K"
+      },
+      "references": {
+       "image": 2
+      }
+     }
+    },
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Aguy:generate",
+     "port": "generation",
+     "capability": "@hypit/gpt-image@1#gpt-image-2",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "prompt": "234 words",
+       "aspectRatio": "9:16",
+       "resolution": "2K"
+      },
+      "references": {
+       "image": 1
+      }
+     }
+    },
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Apasta:generate",
+     "port": "generation",
+     "capability": "@hypit/gpt-image@1#gpt-image-2",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "prompt": "202 words",
+       "aspectRatio": "9:16",
+       "resolution": "2K"
+      },
+      "references": {
+       "image": 1
+      }
+     }
+    },
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Asmoothie:generate",
+     "port": "generation",
+     "capability": "@hypit/gpt-image@1#gpt-image-2",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "prompt": "185 words",
+       "aspectRatio": "9:16",
+       "resolution": "2K"
+      },
+      "references": {
+       "image": 1
+      }
+     }
+    },
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Asplit:generate",
+     "port": "generation",
+     "capability": "@hypit/gpt-image@1#gpt-image-2",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "prompt": "175 words",
+       "aspectRatio": "9:16",
+       "resolution": "2K"
+      },
+      "references": {
+       "image": 2
+      }
+     }
+    }
+   ]
+  },
+  {
+   "capability": "@hypit/fishaudio-speech@1#voice-design-1",
+   "status": "resolved",
+   "endpoint": "hypihub.default",
+   "use": "@hypit/provider-hypihub",
+   "pricing": {
+    "kind": "page",
+    "url": "https://hypit.ai/commercial/pricing/"
+   },
+   "pricingDocuments": [
+    {
+     "source": "https://hypit.ai/v1/pricing?model=fishaudio%2Fvoice-design-1",
+     "data": {
+      "credits_per_usd": 200,
+      "model": "fishaudio/voice-design-1",
+      "object": "model_pricing",
+      "pricing": {
+       "base_usd": 0.013,
+       "credits": {
+        "base": 2.6
+       },
+       "currency": "usd",
+       "mode": "per_request",
+       "unit": "per request"
+      }
+     }
+    }
+   ],
+   "requests": [
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Agirl-voice:generate",
+     "port": "generation",
+     "capability": "@hypit/fishaudio-speech@1#voice-design-1",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "text": "Creatine. Five grams a day, every day.",
+       "voiceDescription": "24 words"
+      },
+      "references": {}
+     }
+    },
+    {
+     "request": "need:author%3Areference.svml%3A%3Acomponent%3A%3Aguy-voice:generate",
+     "port": "generation",
+     "capability": "@hypit/fishaudio-speech@1#voice-design-1",
+     "endpoint": "hypihub.default",
+     "summary": {
+      "fields": {
+       "text": "15 words",
+       "voiceDescription": "21 words"
+      },
+      "references": {}
+     }
+    }
+   ]
+  }
+ ],
+ "producerFailureCount": 0,
+ "producerFailures": []
+}

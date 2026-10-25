@@ -1,0 +1,14 @@
+{
+  "name": "hypit-podcast-template",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "hypit": {
+    "project": true
+  },
+  "dependencies": {
+    "@fontsource-variable/montserrat": "^5.3.0",
+    "@hypit/gpt-image-kits": "^0.1.1",
+    "@hypit/seedance-kits": "^0.1.1"
+  }
+}

@@ -90,6 +90,7 @@ class TaskPage(QWidget):
     publish_requested = Signal(str)  # video path
     rerun_requested = Signal()
     runs_requested = Signal()
+    redo_requested = Signal()
 
     def __init__(self, title: str, subtitle: str = ""):
         super().__init__()
@@ -126,6 +127,9 @@ class TaskPage(QWidget):
         self._rerun = QPushButton("重新运行")
         self._rerun.hide()
         self._rerun.clicked.connect(self.rerun_requested)
+        self._redo = QPushButton("不满意,重做…")
+        self._redo.hide()
+        self._redo.clicked.connect(self.redo_requested)
         self._publish = QPushButton("满意,去发布…")
         self._publish.hide()
         self._publish.clicked.connect(self._emit_publish)
@@ -136,6 +140,7 @@ class TaskPage(QWidget):
         footer.addStretch()
         footer.addWidget(self._cancel)
         footer.addWidget(self._rerun)
+        footer.addWidget(self._redo)
         footer.addWidget(self._publish)
 
         layout = QVBoxLayout(self)
@@ -209,6 +214,7 @@ class TaskPage(QWidget):
         elif ev.type == "done":
             if d["status"] == "success" and self.video_path:
                 self._publish.show()
+                self._redo.show()
             self.set_finished({"success": "已完成", "cancelled": "已取消"}.get(d["status"], d["status"]),
                               can_rerun=d["status"] != "success")
 

@@ -1,6 +1,7 @@
 """Headless checks: python -m unittest discover -s tests (from the desktop/ directory)."""
 import os
 import sys
+import json
 import tempfile
 import time
 import unittest
@@ -15,7 +16,8 @@ from PySide6.QtGui import QCloseEvent  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 from hypit_desktop.agent.replay import SCENARIOS, ReplayAgent, replay_backend_factory  # noqa: E402
-from hypit_desktop.briefs import DEFAULTS, expand, split_lines, title_of  # noqa: E402
+from hypit_desktop.briefs import DEFAULTS, summary_of, title_of  # noqa: E402
+from hypit_desktop import video_title  # noqa: E402
 from hypit_desktop.db import TaskStore  # noqa: E402
 from hypit_desktop.events import Event  # noqa: E402
 from hypit_desktop.featured_seed import seed_featured  # noqa: E402
@@ -48,7 +50,7 @@ def make_window(tmp, speed=1000, concurrent=2):
     settings = Settings(Path(tmp) / "s.json")
     settings.set("replay_speed", speed)
     settings.set("max_concurrent", concurrent)
-    win = MainWindow(store, replay_backend_factory, MockPublisher(0), settings, Path(tmp))
+    win = MainWindow(store, replay_backend_factory, MockPublisher(0), settings, Path(tmp), title_fetcher=None)
     return store, settings, win
 
 
@@ -91,12 +93,61 @@ class ReplayTests(unittest.TestCase):
 
 
 class BriefTests(unittest.TestCase):
-    def test_batch_expansion(self):
-        self.assertEqual(split_lines("a\n\n b \na\n"), ["a", "b"])
-        briefs = expand(dict(BRIEF), ["t1", "t2"], ["p1", "p2"])
-        self.assertEqual(len(briefs), 4)
-        self.assertEqual(len(expand(dict(BRIEF), ["t1", "t2"], [])), 2)
-        self.assertEqual(title_of(briefs[0]), "t1 · p1")
+    def test_title_and_summary(self):
+        self.assertEqual(title_of({**BRIEF, "topic": "t1"}), "t1")
+        self.assertIn("沿用原视频画面", summary_of(BRIEF))
+        self.assertIn("替换:角色、背景", summary_of({**BRIEF, "role_image": "a.png", "background_image": "b.png"}))
+
+
+class VideoTitleTests(unittest.TestCase):
+    def test_platform_and_id(self):
+        url = "https://www.douyin.com/video/7684610633048342905"
+        self.assertEqual(video_title.platform_of(url), "抖音")
+        self.assertEqual(video_title.video_id_of(url), "7684610633048342905")
+        self.assertEqual(video_title.fallback_title(url), "抖音_7684610633048342905")
+        yt = "https://www.youtube.com/watch?v=abc123XYZ_-"
+        self.assertEqual(video_title.fallback_title(yt), "YouTube_abc123XYZ_-")
+        self.assertEqual(video_title.fallback_title("https://youtu.be/dQw4w9WgXcQ"), "YouTube_dQw4w9WgXcQ")
+        self.assertEqual(video_title.fallback_title("https://example.com/a/b"), "example.com_b")
+
+    def test_generic_titles_are_rejected(self):
+        url = "https://www.douyin.com/video/1"
+        self.assertEqual(video_title.clean_title("  抖音 ", url), "")
+        self.assertEqual(video_title.clean_title("请完成验证", url), "")
+        self.assertEqual(video_title.clean_title("猫猫 &amp; 狗狗 - 抖音", url), "猫猫 & 狗狗")
+        self.assertEqual(video_title.fetch_title("ftp://x"), None)
+
+
+class ReplaceTableTests(unittest.TestCase):
+    def make_png(self, tmp, name="a.png"):
+        from PySide6.QtGui import QPixmap
+        path = str(Path(tmp) / name)
+        pixmap = QPixmap(40, 30)
+        pixmap.fill()
+        self.assertTrue(pixmap.save(path))
+        return path
+
+    def test_rows_images_and_default_topic(self):
+        app()
+        from hypit_desktop.ui.replace_table import ReplaceTable
+        with tempfile.TemporaryDirectory() as tmp:
+            table = ReplaceTable()
+            table.reset("auto name")
+            self.assertEqual(table.rows(), [{"topic": "auto name", "role_image": "", "product_image": "",
+                                             "background_image": ""}])
+            png = self.make_png(tmp)
+            table.set_image(0, 1, png)
+            self.assertFalse(table.item(0, 1).icon().isNull())  # a thumbnail is shown
+            self.assertEqual(table.rows()[0]["role_image"], png)
+            table.set_default_topic("new name")  # untouched themes follow the source
+            self.assertEqual(table.rows()[0]["topic"], "new name")
+            table.item(0, 0).setText("mine")  # a user-written theme is left alone
+            table.set_default_topic("other")
+            self.assertEqual(table.rows()[0]["topic"], "mine")
+            table.add_row("second")
+            self.assertEqual(table.rowCount(), 2)
+            table.set_image(0, 1, "")
+            self.assertTrue(table.item(0, 1).icon().isNull())
 
 
 class StoreTests(unittest.TestCase):
@@ -287,6 +338,27 @@ class UiTests(unittest.TestCase):
             self.assertAlmostEqual(store.task(tid)["total_cost"], 1.15)
             store.close()
 
+    def test_not_satisfied_creates_a_revision_task(self):
+        app()
+        from hypit_desktop.ui.feedback_dialog import FeedbackDialog
+        with tempfile.TemporaryDirectory() as tmp:
+            store, settings, win = make_window(tmp)
+            win._submit([dict(BRIEF)], "waiting", None)
+            first = store.tasks()[0]["id"]
+            self.assertTrue(pump(lambda: store.task(first)["status"] == "success", auto_confirm=win))
+            page = win._pages[first]
+            self.assertFalse(page._redo.isHidden())                       # offered once the video is done
+            with mock.patch.object(FeedbackDialog, "exec", return_value=1),                     mock.patch.object(FeedbackDialog, "result_value", return_value=("结尾太平淡", 12.5)):
+                win._redo(first)
+            new = max(store.tasks(), key=lambda r: r["id"])
+            brief = json.loads(new["brief"])
+            self.assertEqual((brief["feedback"], brief["feedback_at"], brief["project_from"]), ("结尾太平淡", 12.5, first))
+            self.assertIn("重做", new["title"])
+            self.assertNotEqual(new["id"], first)
+            pump(lambda: not store.tasks_with_status("running", "waiting"), auto_confirm=win)
+            win.close()
+            store.close()
+
     def test_close_asks_when_task_running(self):
         app()
         with tempfile.TemporaryDirectory() as tmp:
@@ -305,28 +377,81 @@ class UiTests(unittest.TestCase):
             pump(lambda: not win._workers, 5000)  # let the cancelled worker's last events land
             store.close()
 
-    def test_form_collects_batch_and_templates(self):
+    def test_form_rows_defaults_and_templates(self):
         app()
         with tempfile.TemporaryDirectory() as tmp:
             store, settings, win = make_window(tmp)
             form = win._new_page
-            form.topic.setPlainText("t1\nt2")
-            form.product.setPlainText("p1")
+            self.assertEqual(win._home_btn.text(), "返回主页")
+            self.assertFalse(form._pro_box.isAncestorOf(form.model))  # model/aspect/resolution show in simple mode
+            self.assertFalse(form._pro_box.isAncestorOf(form.aspect))
+            self.assertFalse(form._pro_box.isAncestorOf(form.resolution))
+
+            # default theme from the link: '<platform>_<video id>', replaced by a real title once known
+            rows = form.collect()
+            self.assertEqual([b["topic"] for b in rows], ["抖音_7684610633048342905"])
+            self.assertEqual((rows[0]["role_image"], rows[0]["product_image"], rows[0]["background_image"]), ("", "", ""))
+            form._on_title(form.url.text().strip(), "猫猫的一天")
+            self.assertEqual(form.collect()[0]["topic"], "猫猫的一天")
+
+            # default theme from a local file: its name
+            video = Path(tmp) / "我的视频.mp4"
+            video.write_bytes(b"x")
+            form.file_radio.setChecked(True)
+            form.file_path.setText(str(video))
+            form._refresh_default()
+            self.assertEqual(form.collect()[0]["topic"], "我的视频")
+
+            # one task per row, images optional per column
+            png = Path(tmp) / "role.png"
+            from PySide6.QtGui import QPixmap
+            pixmap = QPixmap(20, 20)
+            pixmap.fill()
+            pixmap.save(str(png))
+            form.table.set_image(0, 1, str(png))
+            form._add_row()
+            form.table.item(1, 0).setText("第二个")
+            form.table.set_image(1, 3, str(png))
+            briefs = form.collect()
+            self.assertEqual([(b["topic"], bool(b["role_image"]), bool(b["product_image"]), bool(b["background_image"]))
+                              for b in briefs], [("我的视频", True, False, False), ("第二个", False, False, True)])
+            form.table.set_image(1, 3, str(Path(tmp) / "missing.png"))
+            with self.assertRaises(ValueError):
+                form.collect()
+            form.table.set_image(1, 3, "")
+
             form.pro_radio.setChecked(True)
             form.model.setCurrentText("Wan 3.0")
             form.custom_radio.setChecked(True)
             form.duration_custom.setValue(47)
             briefs = form.collect()
-            self.assertEqual([(b["topic"], b["product"]) for b in briefs], [("t1", "p1"), ("t2", "p1")])
             self.assertEqual((briefs[0]["model"], briefs[0]["duration"], briefs[0]["mode"]),
                              ("Wan 3.0", "47 秒", "pro"))
             store.save_template("my", form.template_params())
             form.model.setCurrentText("Seedance 2.5")
             form.apply_params(store.templates()["my"])
             self.assertEqual(form.model.currentText(), "Wan 3.0")
-            form.topic.clear()
+
+            form.table.remove_selected_rows()  # nothing selected: no-op
+            form.table.setRowCount(0)
             with self.assertRaises(ValueError):
                 form.collect()
+            win.close()
+            store.close()
+
+    def test_editing_a_queued_task_shows_its_images_then_resets(self):
+        app()
+        with tempfile.TemporaryDirectory() as tmp:
+            store, settings, win = make_window(tmp)
+            form = win._new_page
+            brief = {**BRIEF, "topic": "待改", "product_image": "p.png"}
+            tid = store.create_task("待改", brief, status="pending")
+            win._open_task(tid)
+            self.assertEqual(form.table.rows()[0]["topic"], "待改")
+            self.assertEqual(form.table.rows()[0]["product_image"], "p.png")
+            win._show_new()  # back to the home page: the edited task is no longer shown
+            self.assertEqual(form.table.rows()[0]["topic"], "example.com_v")  # default theme of the shown link
+            self.assertEqual(form.table.rows()[0]["product_image"], "")
             win.close()
             store.close()
 
