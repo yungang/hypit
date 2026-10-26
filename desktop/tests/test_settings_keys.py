@@ -342,20 +342,61 @@ class SettingsDialogTests(unittest.TestCase):
 
 
 class WhisperxHomeTests(unittest.TestCase):
-    def test_the_service_folder_is_found_where_configured_or_at_the_standard_path(self):
+    @staticmethod
+    def make_bundle(root, with_python=True):
+        from hypit_desktop.agent import whisperx as wx
+        home = Path(root) / "whisperx"
+        (home / wx.SERVICE_PACKAGE).mkdir(parents=True)
+        if with_python:
+            interpreter = home / "python" / "cpython-3.13.16-windows-x86_64-none" / "python.exe"
+            interpreter.parent.mkdir(parents=True)
+            interpreter.write_bytes(b"")
+        return home
+
+    def test_the_service_folder_is_found_where_configured_or_next_to_the_program(self):
         from hypit_desktop.agent import whisperx as wx
         from hypit_desktop.hypit.cli import HypitError
         with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp) / "whisperx"
-            exe = home / wx.SERVICE_EXE
-            exe.parent.mkdir(parents=True)
-            exe.write_bytes(b"")
+            home = self.make_bundle(tmp)
             self.assertEqual(wx.find_whisperx_home(str(home)), home.resolve())
-            with mock.patch.object(wx, "STANDARD_HOME", home):                       # no setting: the standard path
-                self.assertEqual(wx.find_whisperx_home(""), home.resolve())
-            with mock.patch.object(wx, "STANDARD_HOME", Path(tmp) / "nowhere"),                     mock.patch.object(wx, "PACKAGE_DIR", Path(tmp) / "a" / "b" / "c"):
-                with self.assertRaises(HypitError):
+            # a packaged app looks beside its exe: hypit-desktop\services\whisperx
+            exe_dir = Path(tmp) / "hypit-desktop"
+            moved = self.make_bundle(exe_dir / "services")
+            with mock.patch.object(wx.sys, "frozen", True, create=True), \
+                    mock.patch.object(wx.sys, "executable", str(exe_dir / "hypit-desktop.exe")):
+                self.assertEqual(wx.find_whisperx_home(""), moved.resolve())
+            with mock.patch.object(wx, "PACKAGE_DIR", Path(tmp) / "a" / "b" / "c"):
+                with self.assertRaises(HypitError) as caught:
                     wx.find_whisperx_home(str(Path(tmp) / "missing"))
+                self.assertIn("services", str(caught.exception))
+
+    def test_the_start_script_runs_the_bundled_interpreter_by_a_relative_path(self):
+        from hypit_desktop.agent import whisperx as wx
+        with tempfile.TemporaryDirectory() as tmp:
+            home = self.make_bundle(tmp)
+            (home / "models").mkdir()
+            text = wx.write_start_script(home).read_text(encoding="ascii")
+            self.assertIn('"%~dp0python\\cpython-3.13.16-windows-x86_64-none\\python.exe" -c', text)
+            self.assertIn('set "HYPIT_SITE_PACKAGES=%~dp0.venv\\Lib\\site-packages"', text)
+            self.assertIn("hypit_whisperx_service.__main__", text)
+            self.assertIn('HYPIT_WHISPERX_MODEL_CACHE=%~dp0models', text)
+            self.assertNotIn(str(home), text)                      # nothing absolute: the folder can be moved
+            self.assertNotIn("hypit-whisperx-service.exe", text)   # that launcher records the build path
+
+    def test_without_a_bundled_interpreter_the_venv_launcher_is_used(self):
+        from hypit_desktop.agent import whisperx as wx
+        with tempfile.TemporaryDirectory() as tmp:
+            home = self.make_bundle(tmp, with_python=False)
+            text = wx.write_start_script(home).read_text(encoding="ascii")
+            self.assertIn("hypit-whisperx-service.exe", text)
+            self.assertNotIn("HYPIT_WHISPERX_MODEL_CACHE", text)       # only set when a models folder is bundled
+
+    def test_a_link_to_an_interpreter_is_not_taken_for_a_bundled_one(self):
+        from hypit_desktop.agent import whisperx as wx
+        with tempfile.TemporaryDirectory() as tmp:
+            home = self.make_bundle(tmp)
+            with mock.patch.object(wx, "_is_link", return_value=True):     # uv's absolute-path junction
+                self.assertIsNone(wx.bundled_python(home))
 
 
 class ProviderCheckTests(unittest.TestCase):

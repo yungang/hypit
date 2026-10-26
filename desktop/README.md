@@ -79,9 +79,11 @@ Nuitka 或 PySide6 升级后,可运行 `build.ps1` 重新验证:启动,新建任
   费用按 `hypit/ark_prices.py` 的价目表估算(元),实测误差约 2%;导演被告知单价和“总生成秒数不超过成片的 1.25 倍”的上限。
 - **本地语音对齐**(WhisperX)由应用统一管理,所有任务共用一份环境(设置里“本地语音对齐服务”指向包含 `.venv` 的文件夹),
   Hypit 只通过 `serviceCommand` 启动它,避免每个任务重装。
-  **给员工机器部署**:在一台已经下载好模型的机器上运行 `.\deploy\build_whisperx_bundle.ps1 -Target C:\HypitDesktop\services\whisperx -NltkData <含 tokenizers\punkt_tab 的文件夹>`,
-  它会建好 Python 环境(含解释器)、复制模型和句子数据、生成 `start-whisperx.cmd`,并离线检查所有模型能加载(成品约 3.9 GB,压缩后更小)。
-  环境里记录的是绝对路径,所以**必须解压到和构建时相同的路径**。中文和英文对齐都已验证;英文模型文件曾被断线截断(只有 9.9 MB),脚本会拒绝小于 300 MB 的文件。
+  **给员工机器部署**:先用 `build_pyinstaller.ps1` 打包程序,再在一台已经下载好模型的机器上运行 `.\deploy\build_whisperx_bundle.ps1`
+  (默认建到 `dist\hypit-desktop\services\whisperx`,句子数据会自动查找或下载,找不到时可加 `-NltkData <含 tokenizers\punkt_tab 的文件夹>`(已有的打包目录里就有);走本机代理时 NLTK 默认拒绝下载,确认代理可信可加 `-TrustProxy`)。
+  它会建好 Python 环境、把解释器放进文件夹、复制模型和句子数据、生成 `start-whisperx.cmd`,并用包内解释器离线检查所有模型能加载(成品约 3.9 GB)。
+  **文件夹可以放在任何位置**:启动脚本直接运行包内的解释器并把包内的库加入路径,不依赖构建时的路径(已实测:复制到新位置、藏起原目录后,中英文对齐都正常)。
+  把 `whisperx` 文件夹和 exe 一起发给员工即可,放在 `hypit-desktop.exe` 旁边的 `services\whisperx`;放在别处就在设置里指定。压缩用 `tar -a -c -f whisperx.zip whisperx`。中文和英文对齐都已验证;英文模型文件曾被断线截断(只有 9.9 MB),脚本会拒绝小于 300 MB 的文件。
 - **自动重试**(`agent/agent_backend.py`):遇到 502、连接重置这类临时故障,等一会儿后自动用 `build-record`/`satisfy` 复用已生成的素材重新提交,
   最多 3 次;累计预估超过你确认金额的 1.5 倍时会再弹一次确认卡片。合成阶段的脚本问题(例如字幕越界)会让导演修正后再提交,最多 2 次。
 - **重做**:成片页“不满意,重做…”会新建一个任务,沿用原项目和 AI 会话,按你的反馈只改需要改的部分,没动的素材由导演在 Run 里复用。
