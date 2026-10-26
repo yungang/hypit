@@ -320,8 +320,8 @@ class UiTests(unittest.TestCase):
             self.assertEqual([r[1] for r in store.cost_by_task(0)], ["b", "a"])  # deleted task still counted
             self.assertEqual(dict((m, c) for m, _, c in store.cost_by_model(0)), {"Wan 3.0": 1.5, "Seedance 2.5": 2.0})
             win._show_stats()
-            self.assertEqual(win._stats_page._cards["all"].text(), "$3.50")
-            self.assertEqual(win._stats_page._cards["today"].text(), "$1.00")
+            self.assertEqual(win._stats_page._cards["all"].text(), "¥25.20")
+            self.assertEqual(win._stats_page._cards["today"].text(), "¥7.20")
             win.close()
             store.close()
 

@@ -2,6 +2,8 @@
 decides what that means for the queues and rebuilds the lists."""
 from __future__ import annotations
 
+from .. import money
+
 from functools import partial
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
@@ -34,7 +36,7 @@ class TaskListWidget(QListWidget):
             status = row["status"]
             extra = f" · 第 {self._waiting_rank(rows, position)} 位" if status == "waiting" else ""
             item = QListWidgetItem(f"{STATUS_ICONS.get(status, '')} {row['title']}\n"
-                                   f"{STATUS_LABELS.get(status, status)}{extra} · 累计 ${row['total_cost']:.2f}")
+                                   f"{STATUS_LABELS.get(status, status)}{extra} · 累计 {money.fmt(row['total_cost'])}")
             item.setSizeHint(QSize(100, 46))
             item.setData(Qt.UserRole, row["id"])
             item.setData(Qt.UserRole + 1, status)

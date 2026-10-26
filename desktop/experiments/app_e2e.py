@@ -1,7 +1,7 @@
 """Drive the real main window end to end with the real AI-director backend (offscreen, no human clicks).
 
 Submits one task, clicks the price card's "go", waits for the video, then does 不满意,重做 and waits again.
-SPENDS CREDITS (about 240 for the first video + about 50 for the redo). Needs DEEPSEEK_API_KEY in the environment.
+SPENDS MONEY (about 5 yuan for the first video + about 1-2 yuan for the redo on the Ark service at 480p). Needs DEEPSEEK_API_KEY in the environment.
 
     .\\.venv\\Scripts\\python.exe experiments\\app_e2e.py --reference <video.mp4> [--no-redo]
 """
@@ -21,8 +21,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PySide6.QtCore import QEventLoop, QTimer  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from hypit_desktop import money  # noqa: E402
 from hypit_desktop.agent.factory import make_backend_factory  # noqa: E402
 from hypit_desktop.briefs import DEFAULTS  # noqa: E402
+from hypit_desktop.credentials import ARK_KEY, LLM_KEY, MemoryStore  # noqa: E402
 from hypit_desktop.db import TaskStore  # noqa: E402
 from hypit_desktop.publish.mock import MockPublisher  # noqa: E402
 from hypit_desktop.settings import Settings  # noqa: E402
@@ -45,7 +47,7 @@ def pump(window, condition, timeout_s, log):
             state = (row["status"], round(row["total_cost"] or 0, 4))
             if seen.get(row["id"]) != state:
                 seen[row["id"]] = state
-                log(f"task {row['id']} {row['title']!r}: {state[0]}, 已花 ${state[1]}")
+                log(f"task {row['id']} {row['title']!r}: {state[0]}, 已花 {money.fmt(state[1])}")
         if condition():
             loop.quit()
 
@@ -63,6 +65,9 @@ def main() -> int:
     ap.add_argument("--topic", default="程序员的一天")
     ap.add_argument("--feedback", default="结尾太平淡,把最后一个镜头换成更夸张的反转,其余内容保持不变")
     ap.add_argument("--no-redo", action="store_true")
+    ap.add_argument("--service", default="ark", choices=("ark", "hypihub"))
+    ap.add_argument("--resolution", default="480p")
+    ap.add_argument("--whisperx-home", default="D:/Dev/hypit-services/whisperx")
     ap.add_argument("--data-dir", type=Path, default=Path("experiments/out/app-e2e-data"))
     args = ap.parse_args()
 
@@ -76,11 +81,17 @@ def main() -> int:
     app = QApplication.instance() or QApplication([])
     settings = Settings(data_dir / "settings.json")
     settings.set("backend", "agent")
+    settings.set("generation_service", args.service)
+    settings.set("whisperx_home", args.whisperx_home)
+    keys = MemoryStore()           # keys come from the environment here; the real Credential Manager is not touched
+    keys.set(LLM_KEY, os.environ.get("DEEPSEEK_API_KEY", ""))
+    keys.set(ARK_KEY, os.environ.get("ARK_API_KEY", ""))
     store = TaskStore(data_dir / "tasks.db")
-    window = MainWindow(store, make_backend_factory(data_dir), MockPublisher(0), settings, data_dir, title_fetcher=None)
+    window = MainWindow(store, make_backend_factory(data_dir, keys), MockPublisher(0), settings, data_dir,
+                        title_fetcher=None, credentials=keys)
 
     brief = {**DEFAULTS, "source_type": "file", "url": str(args.reference.resolve()), "topic": args.topic,
-             "model": "Seedance 2.0 Mini", "duration": "15 秒"}
+             "model": "Seedance 2.0 Mini", "duration": "15 秒", "resolution": args.resolution}
     window._submit([brief], "waiting", None)
     first = max(r["id"] for r in store.tasks())
     ok = pump(window, lambda: store.task(first)["status"] in ("success", "failed", "cancelled"), 3000, log)
@@ -103,7 +114,7 @@ def main() -> int:
 def report(store, log) -> int:
     for row in store.tasks():
         runs = store.runs(row["id"])
-        log(f"task {row['id']} {row['title']!r} status={row['status']} cost=${row['total_cost']:.4f} runs={len(runs)}")
+        log(f"task {row['id']} {row['title']!r} status={row['status']} cost={money.fmt(row['total_cost'])} runs={len(runs)}")
         for run in runs:
             log(f"    run {dict(run)}")
     for art in store.artifacts():

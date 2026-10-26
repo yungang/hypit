@@ -40,8 +40,11 @@ def main() -> None:
     ap.add_argument("--language", default="中文")
     ap.add_argument("--model", default="Seedance 2.0 Mini")
     ap.add_argument("--duration", default="15 秒")
+    ap.add_argument("--resolution", default="720p")
     ap.add_argument("--task-id", type=int, default=9001)
     ap.add_argument("--data-dir", type=Path, default=Path("experiments/out/agent-backend-data"))
+    ap.add_argument("--service", default="hypihub", choices=("hypihub", "ark"), help="generation service")
+    ap.add_argument("--whisperx-home", default="", help="folder with the shared WhisperX .venv (ark service)")
     ap.add_argument("--feedback", default="", help="redo: what to change (same as the app's 不满意,重做)")
     ap.add_argument("--feedback-at", type=float, default=None)
     ap.add_argument("--project-from", type=int, default=None, help="redo: reuse this task's project and outputs")
@@ -49,9 +52,12 @@ def main() -> None:
     args = ap.parse_args()
 
     settings = Settings(args.data_dir / "settings.json")
+    settings.set("generation_service", args.service)
+    if args.whisperx_home:
+        settings.set("whisperx_home", args.whisperx_home)
     backend = agent_backend_from(settings, args.data_dir)
     brief = {**DEFAULTS, "source_type": "file", "url": str(args.reference), "topic": args.topic,
-             "language": args.language, "model": args.model, "duration": args.duration, "task_id": args.task_id}
+             "language": args.language, "model": args.model, "duration": args.duration, "resolution": args.resolution, "task_id": args.task_id}
     if args.feedback:
         brief.update(feedback=args.feedback, feedback_at=args.feedback_at, project_from=args.project_from)
     started = time.time()

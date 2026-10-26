@@ -9,11 +9,13 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QHBoxLayout, QInputDialog, QLabel, QMenu, QMessageBox,
                                QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
+from .. import money
 from ..agent.base import AgentBackend
 from ..briefs import normalize, summary_of, title_of
 from ..db import TERMINAL, TaskStore
 from ..events import Event
 from ..publish.base import Publisher
+from ..credentials import KeyStore, default_store
 from ..settings import Settings
 from ..video_title import fetch_title
 from ..worker import AgentWorker
@@ -31,7 +33,8 @@ from .task_page import TaskPage
 class MainWindow(QWidget):
     def __init__(self, store: TaskStore, backend_factory: Callable[[Settings], AgentBackend],
                  publisher: Publisher, settings: Settings, data_dir: Path,
-                 title_fetcher: Optional[Callable[[str], Optional[str]]] = fetch_title):
+                 title_fetcher: Optional[Callable[[str], Optional[str]]] = fetch_title,
+                 credentials: Optional[KeyStore] = None):
         super().__init__()
         self.setWindowTitle("视频复刻助手")
         self.resize(1280, 900)
@@ -39,6 +42,8 @@ class MainWindow(QWidget):
         self._backend_factory = backend_factory
         self._publisher = publisher
         self._settings = settings
+        money.configure(settings.get("display_currency"))
+        self._credentials = credentials if credentials is not None else default_store()
         self._pages: dict[int, TaskPage] = {}
         self._workers: dict[int, AgentWorker] = {}
         self._selected_id: int | None = None
@@ -406,7 +411,7 @@ class MainWindow(QWidget):
             self._open_publish(art["task_id"] or 0, art["path"], art["title"])
 
     def _open_settings(self) -> None:
-        SettingsDialog(self._settings, self).exec()
+        SettingsDialog(self._settings, self._credentials, self).exec()
         self._schedule()  # a higher concurrency limit may free slots
 
     def closeEvent(self, event) -> None:

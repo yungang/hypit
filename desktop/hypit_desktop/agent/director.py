@@ -8,6 +8,7 @@ import asyncio
 import json
 import os
 import queue
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -28,9 +29,15 @@ _DONE = object()
 GIVE_UP_SECONDS = 20.0
 
 
+SECRET_WORDS = re.compile(r"ANTHROPIC|API_?KEY|AUTH_?TOKEN|SECRET|PASSWORD|CREDENTIAL", re.IGNORECASE)
+
+
 def bash_allowed(command: str) -> bool:
-    """Every command in a chain must be on the list; quoting is respected and nothing may leave the project."""
+    """Every command in a chain must be on the list; quoting is respected and nothing may leave the project.
+    Commands that name a secret-looking variable are refused (the shell holds the AI model's own key)."""
     import shlex
+    if SECRET_WORDS.search(command):
+        return False
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     try:
@@ -105,24 +112,33 @@ class PhaseResult:
 
 class Director:
     def __init__(self, workspace: Path, api_key: str, base_url: str, model: str, launcher: str, node: str,
-                 max_turns: int = 150, use_env_proxy: bool = True, sdk=None):
+                 max_turns: int = 150, use_env_proxy: bool = True, sdk=None, placeholder_env: Optional[dict] = None,
+                 auth: str = "bearer", max_context: int = 900_000):
         self.workspace, self.api_key, self.base_url, self.model = Path(workspace), api_key, base_url, model
         self.launcher, self.node, self.max_turns, self.use_env_proxy = launcher, node, max_turns, use_env_proxy
+        self.auth, self.max_context = auth, max_context
         self._sdk = sdk  # injected in tests
+        # Names the Hypit preflight wants to see set; the director gets a dummy so the real key never reaches the model.
+        self.placeholder_env = dict(placeholder_env or {})
 
     # --- the SDK side -------------------------------------------------------------------------------
     def _options(self, resume: bool, sdk):
         env = {
-            "ANTHROPIC_BASE_URL": self.base_url, "ANTHROPIC_AUTH_TOKEN": self.api_key, "ANTHROPIC_API_KEY": "",
+            "ANTHROPIC_BASE_URL": self.base_url,
+            # DeepSeek-style endpoints take the key as a bearer token; Anthropic itself wants it as x-api-key
+            "ANTHROPIC_AUTH_TOKEN": "" if self.auth == "x-api-key" else self.api_key,
+            "ANTHROPIC_API_KEY": self.api_key if self.auth == "x-api-key" else "",
             "ANTHROPIC_MODEL": self.model, "ANTHROPIC_DEFAULT_OPUS_MODEL": self.model,
             "ANTHROPIC_DEFAULT_SONNET_MODEL": self.model, "ANTHROPIC_DEFAULT_HAIKU_MODEL": self.model,
             "CLAUDE_CODE_SUBAGENT_MODEL": self.model, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-            "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "900000",
             "PATH": str(self.workspace / "bin") + os.pathsep + os.environ.get("PATH", ""),
             "HYPIT_GUARD_WORKSPACE": str(self.workspace), "HYPIT_LAUNCHER": self.launcher,
         }
         if self.use_env_proxy:
             env["NODE_USE_ENV_PROXY"] = "1"
+        if self.max_context:
+            env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(self.max_context)
+        env.update(self.placeholder_env)
         for candidate in GIT_BASH_CANDIDATES:
             if Path(candidate).is_file():
                 env["CLAUDE_CODE_GIT_BASH_PATH"] = candidate

@@ -1,0 +1,48 @@
+{
+  "format": "hypit.runtime-local@1",
+  "dataRoot": ".hypit/runtimes/local",
+  "credentials": {
+    "env": {
+      "use": "@hypit/credential-store-env"
+    }
+  },
+  "endpoints": {
+    "ark.default": {
+      "use": "@hypit-desktop/provider-ark",
+      "config": {
+        "apiKey": {
+          "store": "env",
+          "key": "ARK_API_KEY"
+        },
+        "defaultConcurrency": 3
+      }
+    },
+    "whisperx.local": {
+      "use": "@hypit/provider-whisperx-local",
+      "config": {
+        "expectedModel": "small",
+        "expectedDevice": "cpu",
+        "expectedCompute": "int8",
+        "alignmentLanguages": ["zh", "en"],
+        "serviceCommand": ["cmd.exe", "/c", "{{WHISPERX_START}}"]
+      }
+    },
+    "media.local": {
+      "use": "@hypit/media-local",
+      "config": {
+        "defaultConcurrency": 2
+      }
+    },
+    "html.local": {
+      "use": "@hypit/provider-html-local",
+      "config": {
+        "workers": 2,
+        "quality": "standard",
+        "defaultConcurrency": 1
+      }
+    }
+  },
+  "bindings": {
+    "@hypit/whisperx@1#whisperx-alignment": "whisperx.local"
+  }
+}

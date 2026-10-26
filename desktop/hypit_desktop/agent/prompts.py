@@ -1,7 +1,10 @@
 """What the app asks the director agent to do. Plain text, kept in one place so it can be tuned."""
 from __future__ import annotations
 
+import re
+
 from ..briefs import normalize
+from ..hypit import ark_prices
 from .models import ModelPlan
 
 SOURCE_PATH = "productions/main/authors/main.svml"
@@ -25,6 +28,40 @@ def _list_replacements(images: dict[str, str]) -> str:
     return "\n".join(lines) if lines else "- 没有提供。人物、商品、场景都由你按参考视频的风格重新设计。"
 
 
+CLIP_SECONDS_FACTOR = 1.25   # generated video seconds allowed per second of the finished video
+MIN_TAKE_SECONDS = 4         # the shortest Seedance clip
+PRICE_NAMES = {"standard": "seedance-2", "fast": "seedance-2-fast", "mini": "seedance-2-mini", "2.5": "seedance-2.5"}
+
+
+def _target_seconds(duration: str) -> int:
+    match = re.search(r"\d+", duration or "")
+    return int(match.group()) if match else 15
+
+
+def _cost_rule(brief: dict, models: ModelPlan, number: int) -> str:
+    """Seedance is billed per generated second; tell the director the price and a hard cap so it plans for cost."""
+    seconds = _target_seconds(brief["duration"])
+    cap = max(MIN_TAKE_SECONDS, int(seconds * CLIP_SECONDS_FACTOR + 0.999))
+    price = ark_prices.seedance_cost(PRICE_NAMES.get(models.variant, "seedance-2-mini"),
+                                     {"resolution": models.resolution, "duration": 1}, {}, [])
+    return (f"{number}. **控制生成成本**:Seedance 按生成的秒数计费,{models.resolution} 约 {price:.2f} 元/秒。"
+            f"所有 Seedance 请求的 duration 之和**不得超过 {cap} 秒**(成片约 {seconds} 秒的 {CLIP_SECONDS_FACTOR:g} 倍)。"
+            f"每段 duration 取刚好覆盖这个镜头的最短值(最短 {MIN_TAKE_SECONDS} 秒),说台词的镜头按台词时长取整(用 hypit estimate 估);"
+            "不要为同一段内容生成备选版本,成片里每个生成的镜头都要真正用到。"
+            "没有人物说话的插入镜头(物件、环境、过渡)优先用 `seedream:TextImage` 的静态图加缓慢推近(clip 的 motion)来做,"
+            "不要为它们生成 Seedance 视频。最后在总结里写出你的 Seedance 总秒数和按上面单价算出的视频费用。\n")
+
+
+def _final_rules(brief: dict, models: ModelPlan) -> str:
+    """Service-specific rules come first (numbered from 7); the summary rule is always last."""
+    extra = models.service.image_rules
+    if not extra:
+        return "7. 最后用不超过 12 行总结:创作方案、请求清单、预估花费、不确定的地方和风险。"
+    cost = _cost_rule(brief, models, 10) if models.service.id == "ark" else ""
+    last = 11 if cost else 10
+    return f"{extra}{cost}{last}. 最后用不超过 12 行总结:创作方案、请求清单、预估花费、不确定的地方和风险。"
+
+
 def build_task_prompt(brief: dict, models: ModelPlan, images: dict[str, str], max_turns: int) -> str:
     b = normalize(brief)
     scene = b["scene"] or "沿用参考视频的场景风格,按新主题重新设计"
@@ -41,7 +78,7 @@ def build_task_prompt(brief: dict, models: ModelPlan, images: dict[str, str], ma
 - 场景与风格:{scene}
 - 目标市场:{b['market']};语言:{b['language']}(台词、配音、字幕都用这个语言)
 - 画面比例:{aspect};分辨率:{models.resolution};总时长约 {b['duration']}
-- 视频模型:Seedance(变体 {models.variant}),图片模型:GPT Image 2
+- 视频模型:Seedance(变体 {models.variant}),图片模型:{models.service.image_label}
 
 ## 替换素材
 {_list_replacements(images)}
@@ -53,7 +90,7 @@ def build_task_prompt(brief: dict, models: ModelPlan, images: dict[str, str], ma
 4. 每个 Seedance 请求的参考图和视频必须声明 person-reference。时长要用 `hypit estimate` 按目标语言估算。
 5. 你的回合数有限(约 {max_turns} 个):读最必要的几份参考文档,尽快动手写 Source,不要研究系统环境或字体文件。
 6. 写完后依次运行 `hypit check`(Source 和 Run)、`hypit plan`、`hypit pricing`。有报错就读报错自己修。
-7. 最后用不超过 12 行总结:创作方案、请求清单、预估花费、不确定的地方和风险。"""
+{_final_rules(b, models)}"""
 
 
 def build_repair_prompt(kind: str, message: str) -> str:

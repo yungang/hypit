@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from . import ark_prices
+
 DEFAULT_CREDITS_PER_USD = 200.0
 
 
@@ -16,6 +18,7 @@ class Estimate:
     credits_per_usd: float = DEFAULT_CREDITS_PER_USD
     paid_requests: int = 0
     incomplete: list[str] = field(default_factory=list)
+    unit: str = "积分"          # what `credits` counts: HypiHub credits, or yuan for Volcengine Ark
 
     @property
     def usd(self) -> float:
@@ -78,8 +81,18 @@ def estimate(pricing_json: dict) -> Estimate:
     notes: list[str] = []
     for group in pricing_json.get("groups", []):
         capability = group.get("capability", "?")
+        if ark_prices.is_ark(group):
+            result.unit, result.credits_per_usd = "元", ark_prices.CNY_PER_USD
+            for request in group.get("requests", []):
+                summary = request.get("summary") or {}
+                result.credits += ark_prices.request_cost(capability, summary.get("fields") or {},
+                                                          summary.get("references") or {}, notes)
+                result.paid_requests += 1
+            continue
         docs = group.get("pricingDocuments") or []
         if not docs:
+            # an unknown price is never a free request: it still counts as a paid one and must be confirmed
+            result.paid_requests += len(group.get("requests", []))
             result.incomplete.append(f"{capability}: 读不到价格,未计入")
             continue
         data = docs[0].get("data") or {}

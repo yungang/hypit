@@ -20,6 +20,9 @@ from ..hypit.reuse import brief_fingerprint, load_state, plan_retry, save_state
 from .base import Responder
 from .director import Director, PhaseResult
 from .models import plan_models
+from ..credentials import PLACEHOLDER_KEY
+from .services import service_by_id, unsupported_reason
+from .whisperx import find_whisperx_home
 from .prompts import (RUN_PATH, SOURCE_PATH, build_feedback_prompt, build_repair_prompt, build_task_prompt)
 from .workspace import Workspace, find_skill_dir, prepare_workspace
 
@@ -35,6 +38,12 @@ class AgentConfig:
     llm_base_url: str = "https://api.deepseek.com/anthropic"
     llm_model: str = "deepseek-flash"
     llm_key_env: str = "DEEPSEEK_API_KEY"
+    llm_key: str = ""                     # typed in Settings (Credential Manager); the env var is the fallback
+    llm_auth: str = "bearer"              # bearer | x-api-key, see agent/llm.py
+    llm_max_context: int = 900_000
+    llm_unavailable: str = ""             # why the chosen director provider cannot run yet ('' when it can)
+    generation_service: str = "ark"   # ark | hypihub
+    whisperx_home: str = ""               # folder with the shared WhisperX .venv (ark service only)
     skill_dir: str = ""
     max_turns: int = 150
     max_auto_retries: int = 3        # re-submissions after a transient error
@@ -53,7 +62,13 @@ def _message(text: str) -> Event:
 
 
 def describe_estimate(est: Estimate) -> str:
-    text = f"预计花费约 {est.credits:.0f} 积分(约 ${est.usd:.2f},{est.paid_requests} 个付费请求)"
+    if est.credits <= 0 and est.paid_requests:
+        text = f"有 {est.paid_requests} 个请求要向服务商付费,但读不到价格,没法估算花费"
+    else:
+        if est.unit == "元":
+            text = f"预计花费约 {est.credits:.2f} 元({est.paid_requests} 个付费请求)"
+        else:
+            text = f"预计花费约 {est.credits:.0f} {est.unit}(约 ${est.usd:.2f},{est.paid_requests} 个付费请求)"
     if est.incomplete:
         text += "。这是估算:" + ";".join(est.incomplete)
     return text
@@ -69,7 +84,10 @@ class HypitAgentBackend:
 
     def _default_director(self, project: Path, api_key: str) -> Director:
         c = self.config
-        return Director(project, api_key, c.llm_base_url, c.llm_model, c.launcher, c.node, c.max_turns, c.use_env_proxy)
+        env_name = service_by_id(c.generation_service).credential_env
+        placeholder = {env_name: PLACEHOLDER_KEY} if env_name else {}
+        return Director(project, api_key, c.llm_base_url, c.llm_model, c.launcher, c.node, c.max_turns, c.use_env_proxy,
+                        placeholder_env=placeholder, auth=c.llm_auth, max_context=c.llm_max_context)
 
     # --- entry point --------------------------------------------------------------------------------
     def run(self, brief: dict, responder: Responder) -> Iterator[Event]:
@@ -87,21 +105,39 @@ class HypitAgentBackend:
         task_id = int(brief["task_id"])
         project_id = int(brief.get("project_from") or task_id)
 
-        models = plan_models(brief)
+        if c.llm_unavailable:
+            yield Event("error", {"text": c.llm_unavailable + "请到「设置」里把 AI 导演改成 DeepSeek 或 Anthropic。"})
+            return
+        why = unsupported_reason(c.generation_service)
+        if why:
+            yield Event("error", {"text": why})
+            return
+
+        models = plan_models(brief, service_by_id(c.generation_service))
         if models.problems:
             yield Event("error", {"text": " ".join(models.problems)})
             return
-        api_key = os.environ.get(c.llm_key_env, "")
+        api_key = c.llm_key or os.environ.get(c.llm_key_env, "")
         if not api_key:
-            yield Event("error", {"text": f"没有找到 AI 导演的密钥。请在系统环境变量 {c.llm_key_env} 里设置它,然后重新运行。"})
+            yield Event("error", {"text": "还没有设置 AI 导演的密钥。请到「设置」里填写并测试连接,然后重新运行。"})
             return
 
         yield _step("prepare", "准备项目和素材", "running")
+        extra = {"whisperx_home": find_whisperx_home(c.whisperx_home)} if models.service.programs else {}
         workspace = self._workspace_factory(self.cli, self.data_dir, project_id, brief, models,
-                                            find_skill_dir(c.skill_dir), c.node)
+                                            find_skill_dir(c.skill_dir), c.node, **extra)
         project = workspace.path
+        service = models.service
+        worker_env = getattr(self.cli, "extra_env", None) or {}
+        if service.credential_env and not (worker_env.get(service.credential_env) or os.environ.get(service.credential_env)):
+            yield Event("error", {"text": f"还没有设置{service.label}的 API Key。请到「设置」里填写并测试连接,然后重新运行。"})
+            return
         self.cli.runtime_up(project)
         yield _step("prepare", "准备项目和素材", "done")
+        for program in service.programs:
+            yield _step("program", "启动本地语音对齐服务", "running")
+            self.cli.programs_up(project, program)
+            yield _step("program", "启动本地语音对齐服务", "done")
 
         fingerprint = brief_fingerprint({k: v for k, v in brief.items() if k != "project_from"})
         state = load_state(project)
@@ -168,6 +204,11 @@ class HypitAgentBackend:
         yield _step("price", "核对计划与价格", "running")
         full_pricing = self.cli.pricing(project, RUN_PATH)
         run_source, est = RUN_PATH, estimate(full_pricing)
+        # Hypit's own count of requests that are not free is the floor: never skip the confirmation below it.
+        provider = int(full_pricing.get("requestCount", 0)) - int(full_pricing.get("noChargeRequestCount", 0))
+        if provider > est.paid_requests:
+            est.paid_requests = provider
+            est.incomplete.append(f"有 {provider} 个请求要向服务商付费,价格没有读到")
         previous = state["builds"][-1]["id"] if state["builds"] else ""
         if previous and not brief.get("feedback"):
             plan, why = plan_retry(self.cli, project, RUN_PATH, previous, full_pricing, len(state["builds"]))
@@ -247,7 +288,7 @@ class HypitAgentBackend:
                 run_source, est, _ = plan
             if est.paid_requests and (spent_credits + est.credits) > approved * c.budget_margin:
                 ok = yield from self._confirm(
-                    est, f"。累计预计将达 {spent_credits + est.credits:.0f} 积分,超过你确认的 {approved:.0f} 积分的 "
+                    est, f"。累计预计将达 {spent_credits + est.credits:.0f} {est.unit},超过你确认的 {approved:.0f} {est.unit}的 "
                          f"{c.budget_margin:g} 倍。是否继续?", responder)
                 if not ok:
                     yield _message("好的,已停止。已经生成的素材已保存,以后重新运行会复用。")

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .. import money
+
 from functools import partial
 from pathlib import Path
 
@@ -160,7 +162,7 @@ class TaskPage(QWidget):
         self.publish_requested.emit(self.video_path)
 
     def set_costs(self, current: float, total: float, runs: int) -> None:
-        self._cost.setText(f"本次 ${current:.2f} · 累计 ${total:.2f}(共 {runs} 次运行)")
+        self._cost.setText(f"本次 {money.fmt(current)} · 累计 {money.fmt(total)}(共 {runs} 次运行)")
 
     def set_waiting(self) -> None:
         self._cancel.hide()

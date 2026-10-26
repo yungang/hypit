@@ -12,16 +12,13 @@ from typing import Optional
 from ..hypit.cli import HypitCli, HypitError
 from .models import ModelPlan
 from .prompts import ASSET_PATHS, REFERENCE_PATH
+from .services import PROVIDERS_DIR, TEMPLATE_DIR
+from .whisperx import PLACEHOLDER, write_start_script
 
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 PACKAGE_DIR = Path(__file__).resolve().parent
-TEMPLATE_DIR = PACKAGE_DIR.parents[1] / "templates" / "director"
 GUARD_SOURCE = PACKAGE_DIR / "guard" / "hypit_guard.mjs"
-BASE_DEPENDENCIES = {
-    "@hypit/gpt-image-kits": "^0.1.1",
-    "@hypit/seedance-kits": "^0.1.1",
-    "@fontsource-variable/montserrat": "^5.3.0",
-}
+BASE_DEPENDENCIES = {"@fontsource-variable/montserrat": "^5.3.0"}
 
 
 def find_skill_dir(configured: str = "") -> Path:
@@ -52,7 +49,8 @@ def _npm_install(project: Path, use_env_proxy: bool) -> None:
     env = dict(os.environ)
     if use_env_proxy:
         env["NODE_USE_ENV_PROXY"] = "1"
-    done = subprocess.run([npm, "install", "--no-audit", "--no-fund"], cwd=str(project), env=env, capture_output=True,
+    # --install-links copies local packages instead of linking them, so they resolve the project's @hypit packages
+    done = subprocess.run([npm, "install", "--install-links", "--no-audit", "--no-fund"], cwd=str(project), env=env, capture_output=True,
                           text=True, encoding="utf-8", errors="replace", timeout=900, creationflags=_NO_WINDOW)
     if done.returncode != 0:
         raise HypitError("安装项目依赖失败:" + (done.stderr or done.stdout).strip()[-400:])
@@ -100,7 +98,8 @@ def _fetch_reference(cli: HypitCli, project: Path, brief: dict) -> Path:
 
 
 def prepare_workspace(cli: HypitCli, data_dir: Path, project_id: int, brief: dict, models: ModelPlan,
-                      skill_dir: Path, node: str, template: Path = TEMPLATE_DIR) -> Workspace:
+                      skill_dir: Path, node: str, template: Path = TEMPLATE_DIR,
+                      whisperx_home: Optional[Path] = None) -> Workspace:
     """Create or refresh the project for a task. Safe to call again on a retry."""
     project = Path(data_dir).resolve() / "projects" / f"task-{project_id}"  # absolute: the shims embed these paths
     project.mkdir(parents=True, exist_ok=True)
@@ -111,12 +110,20 @@ def prepare_workspace(cli: HypitCli, data_dir: Path, project_id: int, brief: dic
     else:
         manifest = {"name": f"task-{project_id}", "version": "0.0.0", "private": True, "type": "module",
                     "hypit": {"project": True}, "dependencies": {}}
-    wanted = {**BASE_DEPENDENCIES, models.font_package: "^5.3.0"}
+    service = models.service
+    wanted = {**BASE_DEPENDENCIES, **service.dependencies, models.font_package: "^5.3.0"}
+    for folder in service.local_packages:
+        package = json.loads((PROVIDERS_DIR / folder / "package.json").read_text(encoding="utf-8"))
+        wanted[package["name"]] = f"file:{(PROVIDERS_DIR / folder).resolve().as_posix()}"
     missing = {name: version for name, version in wanted.items() if name not in manifest.setdefault("dependencies", {})}
     manifest["dependencies"].update(missing)
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     if not (project / "hypit.runtime.json").is_file():
-        shutil.copy2(template / "hypit.runtime.json", project / "hypit.runtime.json")
+        profile = (template / service.runtime_template).read_text(encoding="utf-8")
+        if whisperx_home is not None:
+            start = write_start_script(whisperx_home)
+            profile = profile.replace(PLACEHOLDER, json.dumps(str(start))[1:-1])  # a JSON-escaped Windows path
+        (project / "hypit.runtime.json").write_text(profile, encoding="utf-8")
     if missing or not (project / "node_modules").is_dir():
         _npm_install(project, cli.use_env_proxy)
     if not (project / ".hypit" / "runtime").is_file():

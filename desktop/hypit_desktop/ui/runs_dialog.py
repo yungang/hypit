@@ -6,6 +6,7 @@ import time
 from PySide6.QtWidgets import (QAbstractItemView, QDialog, QLabel, QPushButton, QTableWidget,
                                QTableWidgetItem, QVBoxLayout)
 
+from .. import money
 from ..db import TaskStore
 from .task_lists import STATUS_LABELS
 
@@ -27,10 +28,10 @@ class RunsDialog(QDialog):
         table.horizontalHeader().setStretchLastSection(True)
         for i, run in enumerate(runs):
             cells = [str(run["run_no"]), STATUS_LABELS.get(run["status"], run["status"]),
-                     f"${run['cost']:.2f}", fmt_time(run["started"]), fmt_time(run["finished"])]
+                     money.fmt(run['cost']), fmt_time(run["started"]), fmt_time(run["finished"])]
             for j, text in enumerate(cells):
                 table.setItem(i, j, QTableWidgetItem(text))
-        total = QLabel(f"累计 ${sum(r['cost'] for r in runs):.2f},共 {len(runs)} 次运行")
+        total = QLabel(f"累计 {money.fmt(sum(r['cost'] for r in runs))},共 {len(runs)} 次运行")
         close = QPushButton("关闭")
         close.clicked.connect(self.accept)
         layout = QVBoxLayout(self)

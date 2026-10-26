@@ -5,6 +5,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 
 from .agent.factory import make_backend_factory
+from .credentials import default_store
 from .db import TaskStore
 from .featured_seed import seed_featured
 from .publish.mock import MockPublisher
@@ -21,7 +22,9 @@ def main() -> int:
     store = TaskStore(data_dir / "tasks.db")
     settings = Settings(data_dir / "settings.json")
     seed_featured(store, settings)
-    window = MainWindow(store, make_backend_factory(data_dir), MockPublisher(), settings, data_dir)
+    credentials = default_store()
+    window = MainWindow(store, make_backend_factory(data_dir, credentials), MockPublisher(), settings, data_dir,
+                        credentials=credentials)
     window.show()
     return app.exec()
 

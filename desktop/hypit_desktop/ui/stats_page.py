@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QHBoxLayout, QLabel,
                                QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
+from .. import money
 from ..db import TaskStore
 
 RANGES = [("今天", 1), ("近 7 天", 7), ("近 30 天", 30), ("全部", 0)]
@@ -51,7 +52,7 @@ class CostChart(QWidget):
             p.setPen(QColor("#555"))
             p.drawText(QRectF(i * slot, h - bottom + 2, slot, bottom - 2), Qt.AlignHCenter | Qt.AlignTop, label)
             if value:
-                p.drawText(QRectF(i * slot, y - 16, slot, 14), Qt.AlignHCenter | Qt.AlignBottom, f"${value:.2f}")
+                p.drawText(QRectF(i * slot, y - 16, slot, 14), Qt.AlignHCenter | Qt.AlignBottom, money.fmt(value))
 
 
 def stat_card(title: str) -> tuple[QFrame, QLabel]:
@@ -151,11 +152,11 @@ class StatsPage(QWidget):
 
     def refresh(self) -> None:
         s = self._store
-        self._cards["today"].setText(f"${s.cost_total(day_start(0))[1]:.2f}")
-        self._cards["week"].setText(f"${s.cost_total(day_start(6))[1]:.2f}")
-        self._cards["month"].setText(f"${s.cost_total(day_start(29))[1]:.2f}")
+        self._cards["today"].setText(money.fmt(s.cost_total(day_start(0))[1]))
+        self._cards["week"].setText(money.fmt(s.cost_total(day_start(6))[1]))
+        self._cards["month"].setText(money.fmt(s.cost_total(day_start(29))[1]))
         runs, total = s.cost_total(0)
-        self._cards["all"].setText(f"${total:.2f}")
+        self._cards["all"].setText(money.fmt(total))
         self._cards["runs"].setText(str(runs))
 
         per_day = {day: cost for day, _, cost in s.cost_by_day(day_start(CHART_DAYS - 1))}
@@ -164,7 +165,7 @@ class StatsPage(QWidget):
 
         span = self.range_combo.currentData()
         since = day_start(span - 1) if span else 0
-        fill(self.by_task, [[title or f"任务 {tid}", str(n), f"${c:.2f}"]
+        fill(self.by_task, [[title or f"任务 {tid}", str(n), money.fmt(c)]
                             for tid, title, n, c in s.cost_by_task(since)])
-        fill(self.by_model, [[model or "(未记录)", str(n), f"${c:.2f}"] for model, n, c in s.cost_by_model(since)])
-        fill(self.by_day, [[day, str(n), f"${c:.2f}"] for day, n, c in reversed(s.cost_by_day(since))])
+        fill(self.by_model, [[model or "(未记录)", str(n), money.fmt(c)] for model, n, c in s.cost_by_model(since)])
+        fill(self.by_day, [[day, str(n), money.fmt(c)] for day, n, c in reversed(s.cost_by_day(since))])

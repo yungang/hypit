@@ -16,7 +16,8 @@ class HypitError(Exception):
 
 class HypitCli:
     def __init__(self, launcher: Path, node: str = "node", use_env_proxy: bool = True,
-                 runner: Optional[Callable] = None):
+                 runner: Optional[Callable] = None, extra_env: Optional[dict] = None):
+        self.extra_env = dict(extra_env or {})   # secrets for the Worker, e.g. ARK_API_KEY from the Credential Manager
         self.launcher = Path(launcher)
         self.node = node
         self.use_env_proxy = use_env_proxy
@@ -27,6 +28,7 @@ class HypitCli:
         if self.use_env_proxy:
             # Node's HTTP client ignores HTTP(S)_PROXY unless asked; downloads stall behind a proxy otherwise.
             env["NODE_USE_ENV_PROXY"] = "1"
+        env.update({k: v for k, v in self.extra_env.items() if v})
         return env
 
     def call(self, args: list[str], project: Path, timeout: float = 120) -> str:
@@ -58,6 +60,10 @@ class HypitCli:
 
     def runtime_up(self, project: Path) -> None:
         self.call(["runtime", "up"], project, 600)
+
+    def programs_up(self, project: Path, endpoint: str) -> None:
+        """Start a local helper (such as the WhisperX service). The first start loads models and takes minutes."""
+        self.call(["programs", "up", "--endpoint", endpoint], project, 1200)
 
     def download(self, project: Path, url: str, destination: str) -> None:
         """Fetch a network video into the project (needs `hypit download prepare` to have been run once)."""

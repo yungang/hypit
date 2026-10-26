@@ -11,7 +11,8 @@ DEFAULTS = {"export_dir": "", "scenario": "normal", "replay_speed": 1.0,
             "hypit_project_dir": "", "hypit_template": "", "hypit_run_source": "",
             # AI director (backend "agent"): an Anthropic-compatible endpoint; the key is read from this env var
             "llm_base_url": "https://api.deepseek.com/anthropic", "llm_model": "deepseek-flash",
-            "llm_key_env": "DEEPSEEK_API_KEY", "hypit_skill_dir": ""}
+            "llm_key_env": "DEEPSEEK_API_KEY", "hypit_skill_dir": "",
+            "llm_provider": "deepseek", "generation_service": "ark", "whisperx_home": "", "display_currency": "CNY"}
 
 
 class Settings:

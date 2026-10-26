@@ -14,6 +14,8 @@ if (-not (Test-Path $py)) { throw "Missing .venv - see the setup line at the top
   --distpath dist `
   --add-data "$PSScriptRoot\hypit_desktop\agent\fixtures;hypit_desktop\agent\fixtures" `
   --add-data "$PSScriptRoot\templates;templates" `
+  --add-data "$PSScriptRoot\providers\provider-ark;providers\provider-ark" `
+  --add-data "$PSScriptRoot\providers\ark_models.json;providers" `
   --add-data "$PSScriptRoot\hypit_desktop\agent\guard;hypit_desktop\agent\guard" `
   --add-data "$PSScriptRoot\..\skills\hypit;skills\hypit" `
   --collect-all claude_agent_sdk

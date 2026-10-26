@@ -17,6 +17,7 @@ from hypit_desktop.agent import director as dr  # noqa: E402
 from hypit_desktop.agent.models import plan_models  # noqa: E402
 from hypit_desktop.agent.prompts import (RUN_PATH, SOURCE_PATH, build_feedback_prompt,  # noqa: E402
                                          build_task_prompt)
+from hypit_desktop.agent.services import ARK, HYPIHUB, TEMPLATE_DIR  # noqa: E402
 from hypit_desktop.agent.workspace import Workspace, prepare_workspace  # noqa: E402
 from hypit_desktop.briefs import DEFAULTS  # noqa: E402
 from hypit_desktop.events import Event  # noqa: E402
@@ -74,7 +75,7 @@ class CheckFlakyCli(FakeCli):
             raise HypitError("syntax error in main.svml")
 
 
-def fake_workspace(cli, data_dir, project_id, brief, models, skill_dir, node):
+def fake_workspace(cli, data_dir, project_id, brief, models, skill_dir, node, **_):
     project = Path(data_dir) / "projects" / f"task-{project_id}"
     project.mkdir(parents=True, exist_ok=True)
     return Workspace(project, project / "reference" / "source.mp4",
@@ -87,6 +88,7 @@ class Harness:
     def __init__(self, tmp, cli, **config):
         self.tmp = Path(tmp)
         self.cli = cli
+        config.setdefault("generation_service", "hypihub")   # the older tests price in HypiHub credits
         self.config = ab.AgentConfig(launcher="x.mjs", llm_key_env=KEY_ENV, retry_delay_seconds=0, poll_seconds=0, **config)
         self.director = None
 
@@ -99,7 +101,8 @@ class Harness:
 
     def run(self, brief=None, responder=None):
         with mock.patch.dict(os.environ, {KEY_ENV: "k"}), \
-                mock.patch.object(ab, "find_skill_dir", return_value=self.tmp):
+                mock.patch.object(ab, "find_skill_dir", return_value=self.tmp), \
+                mock.patch.object(ab, "find_whisperx_home", return_value=self.tmp):
             return list(self.backend.run({**BRIEF, **(brief or {})}, responder or Responder("go", sleeps=10 ** 6)))
 
 
@@ -134,7 +137,7 @@ class BackendFlowTests(unittest.TestCase):
                 os.environ.pop(KEY_ENV, None)
                 events = list(h.backend.run({**BRIEF}, Responder("go")))
             self.assertEqual(events[-1].type, "error")
-            self.assertIn(KEY_ENV, events[-1].data["text"])
+            self.assertIn("设置", events[-1].data["text"])
             self.assertEqual(h.cli.calls, [])
 
     def test_unsupported_model_and_resolution_are_refused_early(self):
@@ -372,6 +375,185 @@ class PiecesTests(unittest.TestCase):
         self.assertIn("第 2 步", events[2].data["title"])
         self.assertNotIn("secret", json.dumps([e.data for e in events], ensure_ascii=False))
         self.assertEqual(dr.translate(sdk.UserMessage(content=[]), counter), [])
+
+
+class ArkServiceTests(unittest.TestCase):
+    def test_ark_models_and_resolutions(self):
+        import json as _json
+        from hypit_desktop.agent.services import PROVIDERS_DIR
+        ids = _json.loads((PROVIDERS_DIR / "ark_models.json").read_text(encoding="utf-8"))
+        # every variant the app offers on Ark has an Ark model id behind it, and the provider package maps it
+        mapping = (PROVIDERS_DIR / "provider-ark" / "dist" / "mapping.js").read_text(encoding="utf-8")
+        for name in ("seedance-2", "seedance-2-fast", "seedance-2-mini", "seedance-2.5", "seedream-5-lite"):
+            self.assertIn(ids[name], mapping)
+        for ui_name, variant in (("Seedance 2.5", "2.5"), ("Seedance 2.0 VIP", "standard"),
+                                 ("Seedance 2.0 Fast VIP", "fast"), ("Seedance 2.0 Mini", "mini")):
+            self.assertEqual(plan_models({**BRIEF, "model": ui_name}, ARK).variant, variant)
+        unknown = plan_models({**BRIEF, "model": "Wan 3.0"}, ARK)
+        self.assertTrue(any("火山方舟" in p for p in unknown.problems))
+        too_big = plan_models({**BRIEF, "resolution": "1080p"}, ARK)          # Mini renders 480p/720p only
+        self.assertTrue(any("480p" in p and "720p" in p for p in too_big.problems))
+        self.assertFalse(plan_models({**BRIEF, "model": "Seedance 2.0 VIP", "resolution": "1080p"}, ARK).problems)
+        self.assertFalse(plan_models({**BRIEF, "model": "Seedance 2.0 VIP", "resolution": "4k"}, ARK).problems)
+
+    def test_ark_prompt_uses_seedream_and_bans_gpt_image(self):
+        ark = build_task_prompt(BRIEF, plan_models(BRIEF, ARK), {}, 100)
+        self.assertIn("@hypit/seedream", ark)
+        self.assertIn("不要使用 gpt-image", ark)
+        self.assertIn("ark.default", ark)
+        self.assertIn("含人脸的图片只能用 `seedream:TextImage`", ark)
+        self.assertLess(ark.index("9. "), ark.index("10. **控制生成成本**"))
+        self.assertLess(ark.index("10. **控制生成成本**"), ark.index("11. 最后用不超过 12 行总结"))
+        old = build_task_prompt(BRIEF, plan_models(BRIEF, HYPIHUB), {}, 100)
+        self.assertIn("GPT Image 2", old)
+        self.assertNotIn("seedream", old.lower())
+        self.assertIn("7. 最后用不超过 12 行总结", old)
+
+    def test_ark_prompt_states_the_cost_budget(self):
+        for resolution, price in (("720p", "0.51"), ("480p", "0.24")):
+            brief = {**BRIEF, "resolution": resolution, "duration": "20 秒"}
+            prompt = build_task_prompt(brief, plan_models(brief, ARK), {}, 100)
+            self.assertIn(f"{resolution} 约 {price} 元/秒", prompt)
+            self.assertIn("不得超过 25 秒", prompt)          # 20 s x 1.25
+            self.assertIn("静态图加缓慢推近", prompt)
+        # a service without per-second pricing rules gets no cost rule
+        self.assertNotIn("控制生成成本", build_task_prompt(BRIEF, plan_models(BRIEF, HYPIHUB), {}, 100))
+
+    def test_ark_runtime_profile_has_no_hypihub(self):
+        profile = json.loads((TEMPLATE_DIR / ARK.runtime_template).read_text(encoding="utf-8"))
+        self.assertEqual(profile["endpoints"]["ark.default"]["use"], "@hypit-desktop/provider-ark")
+        self.assertEqual(profile["endpoints"]["ark.default"]["config"]["apiKey"], {"store": "env", "key": ARK.credential_env})
+        self.assertEqual(profile["bindings"], {"@hypit/whisperx@1#whisperx-alignment": "whisperx.local"})
+        self.assertFalse([name for name, e in profile["endpoints"].items() if "hypihub" in e["use"]])
+        self.assertNotIn("local", profile["credentials"])  # no stored login: the key comes from the environment
+
+    def test_ark_workspace_installs_the_provider_as_a_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ref = Path(tmp) / "ref.mp4"
+            ref.write_bytes(b"x")
+            cli = FakeCli([])
+            cli.use_env_proxy = False
+            brief = {**BRIEF, "url": str(ref)}
+            skill = Path(tmp) / "skill"
+            skill.mkdir()
+            (skill / "SKILL.md").write_text("x", encoding="utf-8")
+            home = Path(tmp) / "whisperx home"
+            home.mkdir()
+            with mock.patch("hypit_desktop.agent.workspace._npm_install") as npm:
+                workspace = prepare_workspace(cli, Path(tmp), 7, brief, plan_models(brief, ARK), skill, "node",
+                                              whisperx_home=home)
+            self.assertTrue(npm.called)
+            manifest = json.loads((workspace.path / "package.json").read_text(encoding="utf-8"))
+            deps = manifest["dependencies"]
+            self.assertTrue(deps["@hypit-desktop/provider-ark"].startswith("file:"))
+            self.assertIn("@hypit/seedream", deps)
+            self.assertNotIn("@hypit/gpt-image-kits", deps)
+            profile = json.loads((workspace.path / "hypit.runtime.json").read_text(encoding="utf-8"))
+            self.assertIn("ark.default", profile["endpoints"])
+            command = profile["endpoints"]["whisperx.local"]["config"]["serviceCommand"]
+            self.assertEqual(command[:2], ["cmd.exe", "/c"])
+            self.assertEqual(Path(command[2]), home / "start-whisperx.cmd")
+            script = (home / "start-whisperx.cmd").read_text(encoding="ascii")
+            self.assertIn("HYPIT_WHISPERX_MODEL=small", script)
+            self.assertIn("hypit-whisperx-service.exe", script)
+
+    def test_unknown_price_is_never_free(self):
+        from hypit_desktop.hypit.estimate import estimate
+        pricing = {"requestCount": 28, "noChargeRequestCount": 17, "groups": [
+            {"capability": "seedream", "requests": [{}] * 7, "pricingDocuments": []},
+            {"capability": "seedance", "requests": [{}] * 4, "pricingDocuments": []}]}
+        est = estimate(pricing)
+        self.assertEqual(est.paid_requests, 11)
+        self.assertEqual(est.credits, 0)
+        self.assertIn("没法估算花费", ab.describe_estimate(est))
+
+    def test_confirmation_is_never_skipped_when_hypit_reports_paid_requests(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pricing = {"requestCount": 5, "noChargeRequestCount": 2, "groups": []}  # no group says anything
+            cli = FakeCli([COMPLETE], pricing=pricing, outputs=PAID_OUTPUTS)
+            events = Harness(tmp, cli).run(responder=Responder("cancel"))
+            self.assertIn("confirm", types(events))
+            self.assertNotIn("build", cli.calls)
+
+    def test_ark_prices_match_the_official_examples(self):
+        from hypit_desktop.hypit import ark_prices as ap
+        notes = []
+
+        def yuan(name, resolution, seconds, video=False):
+            fields = {"resolution": resolution, "duration": seconds}
+            return ap.seedance_cost(name, fields, {"video": 1} if video else {}, notes) / ap.SAFETY
+
+        # figures from the official "价格示例" table (16:9, 5 s, no input video)
+        self.assertAlmostEqual(yuan("seedance-2-mini", "480p", 5), 1.16, delta=0.02)
+        self.assertAlmostEqual(yuan("seedance-2-mini", "720p", 5), 2.48, delta=0.02)
+        self.assertAlmostEqual(yuan("seedance-2-fast", "720p", 5), 4.00, delta=0.04)
+        self.assertAlmostEqual(yuan("seedance-2", "480p", 5), 2.31, delta=0.03)
+        self.assertAlmostEqual(yuan("seedance-2", "1080p", 5), 12.39, delta=0.05)
+        self.assertAlmostEqual(yuan("seedance-2.5", "720p", 5), 7.56, delta=0.05)
+        self.assertEqual(ap.seedream_cost("seedream-5-lite", notes), 0.12)
+        self.assertEqual(notes, [])
+
+    def test_ark_estimate_is_in_yuan_and_confirmable(self):
+        from hypit_desktop.hypit.estimate import estimate
+        pricing = {"requestCount": 6, "noChargeRequestCount": 1, "groups": [
+            {"capability": "@hypit/seedream@1#seedream-5-lite", "use": "@hypit-desktop/provider-ark",
+             "requests": [{"summary": {"fields": {}, "references": {}}}] * 3, "pricingDocuments": []},
+            {"capability": "@hypit/seedance@1#seedance-2-mini", "use": "@hypit-desktop/provider-ark",
+             "requests": [{"summary": {"fields": {"resolution": "720p", "duration": 5}, "references": {"image": 2}}}] * 2,
+             "pricingDocuments": []}]}
+        est = estimate(pricing)
+        self.assertEqual((est.unit, est.paid_requests), ("元", 5))
+        self.assertAlmostEqual(est.credits, 3 * 0.12 + 2 * 2.48, delta=0.3)
+        text = ab.describe_estimate(est)
+        self.assertIn("元", text)
+        self.assertNotIn("读不到价格", text)
+
+    def test_ark_failures_are_explained(self):
+        from hypit_desktop.hypit.failures import classify, is_transient
+        kind, text = classify("Ark HTTP 400; InputImageSensitiveContentDetected.PrivacyInformation; may contain real person")
+        self.assertEqual(kind, "review")
+        self.assertIn("真人", text)
+        self.assertEqual(classify("Ark HTTP 401; AuthenticationError")[0], "auth")
+        self.assertTrue(is_transient(classify("Ark HTTP 503; ServerOverloaded")[0]))
+
+    def test_ark_run_needs_its_key_and_starts_the_alignment_service(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cli = FakeCli([working(10), COMPLETE], outputs=PAID_OUTPUTS)
+            cli.programs = []
+            cli.programs_up = lambda project, endpoint: (cli.calls.append("programs_up"), cli.programs.append(endpoint))
+            harness = Harness(tmp, cli, generation_service="ark")
+            with mock.patch.dict(os.environ, {KEY_ENV: "k"}, clear=False):
+                os.environ.pop("ARK_API_KEY", None)
+                events = harness.run()
+            self.assertEqual(types(events)[-1], "error")
+            self.assertIn("设置", events[-1].data["text"])
+            self.assertIn("火山方舟", events[-1].data["text"])
+            self.assertEqual(cli.programs, [])
+            with mock.patch.dict(os.environ, {"ARK_API_KEY": "ark-test"}):
+                harness.run()
+            self.assertEqual(cli.programs, ["whisperx.local"])
+
+
+class UnavailableProviderTests(unittest.TestCase):
+    def test_a_director_provider_that_cannot_run_stops_before_anything_starts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cli = FakeCli([COMPLETE], outputs=PAID_OUTPUTS)
+            events = Harness(tmp, cli, llm_unavailable="OpenAI 的接口协议不兼容,暂未接入。").run()
+            self.assertEqual(types(events), ["error"])
+            self.assertIn("OpenAI", events[0].data["text"])
+            self.assertIn("DeepSeek 或 Anthropic", events[0].data["text"])
+            self.assertEqual(cli.calls, [])
+
+    def test_a_generation_provider_that_cannot_run_stops_before_anything_is_spent(self):
+        # "anthropic" was offered by an earlier build and is no longer a service: it must not fall back to another one
+        for service, word in (("openai", "OpenAI"), ("gemini", "Gemini"), ("grok", "Grok"), ("anthropic", "不再提供")):
+            with tempfile.TemporaryDirectory() as tmp:
+                cli = FakeCli([COMPLETE], outputs=PAID_OUTPUTS)
+                events = Harness(tmp, cli, generation_service=service).run()
+                self.assertEqual(types(events), ["error"], service)
+                self.assertIn(word, events[0].data["text"], service)
+                self.assertIn("火山方舟", events[0].data["text"], service)
+                self.assertEqual(cli.calls, [], service)                    # no runtime, no pricing, no build
 
 
 if __name__ == "__main__":
